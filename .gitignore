@@ -1,0 +1,109 @@
+####################################
+# Terraform
+####################################
+
+# Local Terraform directory
+.terraform/
+
+# Terraform state files
+*.tfstate
+*.tfstate.*
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Terraform plan files
+*.tfplan
+plan.out
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI configuration
+.terraformrc
+terraform.rc
+
+####################################
+# Terraform Variables (Secrets)
+####################################
+
+*.tfvars
+*.tfvars.json
+
+# !terraform.tfvars.example
+
+####################################
+# Environment Variables
+####################################
+
+.env
+.env.*
+!.env.example
+
+####################################
+# SSH Keys
+####################################
+
+*.pem
+*.ppk
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+
+####################################
+# AWS Credentials
+####################################
+
+.aws/
+credentials
+config
+
+####################################
+# Logs
+####################################
+
+*.log
+
+####################################
+# macOS
+####################################
+
+.DS_Store
+
+####################################
+# Windows
+####################################
+
+Thumbs.db
+Desktop.ini
+
+####################################
+# VS Code
+####################################
+
+.vscode/
+
+####################################
+# IntelliJ
+####################################
+
+.idea/
+
+####################################
+# Vim
+####################################
+
+*.swp
+*.swo
+
+####################################
+# Backup Files
+####################################
+
+*~
+*.bak
