@@ -1,158 +1,281 @@
-# Enterprise GitOps Platform Infra
+# Enterprise GitOps Platform — Infra
 
-## Overview
-
-This repository contains the Terraform infrastructure code for an Enterprise GitOps platform hosted on AWS. It is organized into discrete infrastructure domains:
-
-- `EKS/`: Amazon EKS cluster and supporting networking
-- `ECR/`: Amazon ECR container registry
-- `monitoring/`: observability configuration for Kubernetes
-- `sonarqube-EC2/`: AWS EC2 deployment for SonarQube
-
-The architecture is designed to support GitOps workflows, container image management, continuous inspection, and cluster monitoring.
-
-## Architecture
-
-- A managed Amazon EKS cluster running Kubernetes workloads.
-- A VPC with public and private subnets, NAT gateway, and cluster-specific tags.
-- A private EKS node group for application workloads.
-- An AWS ECR repository for storing container images.
-- A dedicated EC2 instance running SonarQube for code quality scanning.
-- Monitoring support via Kubernetes Prometheus stack and metrics-server configuration.
-
-## Repository Structure
-
-### `EKS/`
-
-Contains Terraform code that provisions the EKS cluster and network resources.
-
-- `provider.tf`: AWS provider configuration.
-- `backend.tf`: Terraform remote state backend configured for S3.
-- `variables.tf`: Inputs for region, availability zones, cluster name, and VPC settings.
-- `vpc.tf`: Creates a VPC using the `terraform-aws-modules/vpc/aws` module with public/private subnets and a NAT gateway.
-- `ebs-csi-irsa.tf`: Configures IAM role and permissions for the AWS EBS CSI driver (used by EKS storage).
-- `ekscluster.tf`: Provisions the EKS cluster using `terraform-aws-modules/eks/aws` and attaches an EKS managed node group.
-- `output.tf`: Exposes VPC IDs and EKS cluster information for use by other automation.
-
-### `ECR/`
-
-Contains Terraform code for the Elastic Container Registry.
-
-- `ecr.tf`: Creates an `aws_ecr_repository` with image scanning enabled and destroy protection.
-- `output.tf`: Exposes the repository URL and name.
-
-### `monitoring/`
-
-Contains Kubernetes monitoring configuration.
-
-- `kube-prometheus-stack/`: Helm or manifest values for deploying Prometheus/Grafana and cluster monitoring.
-- `metrics-server/`: Kubernetes metrics-server configuration and output manifests.
-
-### `sonarqube-EC2/`
-
-Contains Terraform code to deploy a SonarQube server on EC2.
-
-- `provider.tf`: AWS provider configuration.
-- `backend.tf`: Local or remote backend configuration for SonarQube Terraform state.
-- `vars.tf`: Defines instance variables such as region, instance type, AMI selection, and SSH user.
-- `key-pair.tf`: Creates an SSH key pair for EC2 access.
-- `sg.tf`: Defines a security group for SonarQube access.
-- `instance.tf`: Launches an EC2 instance with remote provisioners to run `sonar-setup.sh`.
-- `instanceID.tf`: Looks up and outputs the SonarQube instance ID.
-- `output.tf`: Exposes key outputs for the SonarQube deployment.
-- `sonar-setup.sh`: Setup script executed on the EC2 host to install and configure SonarQube.
-
-## Prerequisites
-
-- AWS account with permissions to create VPCs, EKS clusters, EC2, ECR, IAM roles, and S3 objects.
-- AWS CLI configured with the proper credentials and default region.
-- Terraform installed (compatible with the required provider versions in the modules).
-- `kubectl` configured if you need to interact with the EKS cluster after creation.
-- Optional: Helm if applying the monitoring stack via Helm charts.
-
-## Deployment Order
-
-The recommended deployment order is:
-
-1. `EKS/` - Create networking and cluster infrastructure.
-2. `ECR/` - Create the image registry for application containers.
-3. `monitoring/` - Deploy monitoring components into the Kubernetes cluster.
-4. `sonarqube-EC2/` - Provision the SonarQube server on AWS EC2.
-
-## Usage
-
-### EKS
-
-1. Change into `EKS/`.
-2. Initialize Terraform:
-   ```bash
-   terraform init
-   ```
-3. Review the plan:
-   ```bash
-   terraform plan
-   ```
-4. Apply the infrastructure:
-   ```bash
-   terraform apply
-   ```
-
-### ECR
-
-1. Change into `ECR/`.
-2. Initialize Terraform and apply.
-
-### SonarQube
-
-1. Change into `sonarqube-EC2/`.
-2. Initialize Terraform.
-3. Apply the configuration to launch the EC2 instance.
-
-## Notes
-
-- The EKS backend is configured to use an S3 bucket named `eks-gitops-platform` and key `dev/terraform.tfstate`.
-- The SonarQube EC2 instance uses an SSH key pair named `sonarqube-key-GitOps-platform`.
-- The ECR repository is protected with `prevent_destroy` and has image scanning enabled on push.
-- The EKS VPC is tagged for Kubernetes load balancer discovery and cluster resource sharing.
-
-## Outputs
-
-### EKS outputs
-
-- `vpc_id`
-- `private_subnet_ids`
-- `public_subnet_ids`
-- `cluster_name`
-- `cluster_endpoint`
-
-### ECR outputs
-
-- `ecr_app_url`
-- `ecr_name`
-
-## Monitoring
-
-The `monitoring/` folder contains configuration for Prometheus and metrics-server, intended to provide cluster observability. Deploy these after EKS is ready and `kubectl` is pointed at the cluster.
-
-## Security and Best Practices
-
-- Keep Terraform state secured, especially the S3 backend and any DynamoDB locks if enabled.
-- Rotate SSH keys and avoid committing private SSH keys to version control.
-- Consider using IAM roles for service accounts and stricter security group rules for SonarQube.
-- Review and update AWS provider versions periodically to remain compatible with AWS API changes.
-
-## Improvements
-
-Potential improvements for this repository include:
-
-- Adding Terraform workspaces for multiple environments (dev/test/prod).
-- Enabling DynamoDB locking for the EKS backend.
-- Moving monitoring manifests into a Helm chart deployment script.
-- Adding a dedicated Bastion host or VPN for secure SonarQube access.
-- Implementing GitOps automation to apply the cluster and application manifests automatically.
+> **Part of a 3-repository GitOps system.**
+> This repo provisions all AWS infrastructure using Terraform.
+> It must be applied **before** the other two repos are used.
+>
+> | Repo | Purpose |
+> |------|---------|
+> | [`Enterprise-GitOps-Platform-app`](https://github.com/UsseF-1/Enterprise-GitOps-Platform-app) | Java source, Dockerfiles, CI pipeline |
+> | **`Enterprise-GitOps-Platform-infra`** ← you are here | Terraform — EKS, ECR, VPC, SonarQube |
+> | [`Enterprise-GitOps-Platform-helm`](https://github.com/UsseF-1/Enterprise-GitOps-Platform-helm) | Helm chart, ArgoCD manifests |
 
 ---
 
-## Contact
+## What This Repo Does
 
-If you need help or want to extend this infrastructure, review the Terraform module documentation and AWS provider docs for the modules used.
+Provisions the complete AWS infrastructure for the GitOps platform:
+
+- **VPC** with public/private subnets across 2 availability zones and a NAT gateway
+- **EKS cluster** (`GitOps-Platform-EKS`) with a managed node group on private subnets
+- **EBS CSI Driver** with IRSA for persistent volume support inside EKS
+- **ECR repository** for storing application Docker images
+- **SonarQube EC2 instance** for code quality scanning (used by the app repo CI pipeline)
+- **Monitoring stack** — kube-prometheus-stack and metrics-server values for Helm deployment
+
+---
+
+## Repository Structure
+
+```
+.
+├── EKS/
+│   ├── provider.tf          # AWS provider (~> 5.95)
+│   ├── backend.tf           # Remote state → S3 bucket: eks-gitops-platform
+│   ├── variables.tf         # Region, AZs, cluster name
+│   ├── vpc.tf               # VPC module — 2 public + 2 private subnets, NAT GW
+│   ├── ekscluster.tf        # EKS cluster + managed node group (t3.medium)
+│   ├── ebs-csi-irsa.tf      # IRSA role for EBS CSI Driver
+│   └── output.tf            # vpc_id, subnet IDs, cluster_name, cluster_endpoint
+├── ECR/
+│   ├── ecr.tf               # ECR repo with scan_on_push + prevent_destroy
+│   └── output.tf            # ecr_app_url, ecr_name
+├── monitoring/
+│   ├── kube-prometheus-stack/
+│   │   └── values.yaml      # Helm values for Prometheus + Grafana
+│   └── metrics-server/
+│       └── values.yaml      # Helm values for metrics-server
+├── sonarqube-EC2/
+│   ├── provider.tf
+│   ├── backend.tf
+│   ├── vars.tf              # Region, instance type, SSH user
+│   ├── key-pair.tf          # SSH key pair for EC2 access
+│   ├── sg.tf                # Security group — ports 22, 80, 9000
+│   ├── instance.tf          # EC2 (t3.medium, Ubuntu) + remote provisioner
+│   ├── instanceID.tf        # Data source for AMI lookup
+│   ├── output.tf            # sonarqubePublicIP, sonarqubePrivateIP, instance_id
+│   └── sonar-setup.sh       # Installs and configures SonarQube on EC2
+└── .gitignore
+```
+
+---
+
+## Architecture
+
+```
+                          ┌─────────────────────────────────────┐
+                          │              AWS VPC                 │
+                          │          10.0.0.0/16                 │
+                          │                                      │
+                          │  ┌─────────────┐ ┌───────────────┐  │
+          Internet ───────┼──│Public Subnet│ │Public Subnet  │  │
+                          │  │10.0.1.0/24  │ │10.0.2.0/24   │  │
+                          │  │  (us-east-1a)│ │(us-east-1b)  │  │
+                          │  └──────┬──────┘ └───────────────┘  │
+                          │         │ NAT GW                     │
+                          │  ┌──────▼──────┐ ┌───────────────┐  │
+                          │  │Private Subnet│ │Private Subnet │  │
+                          │  │10.0.3.0/24  │ │10.0.4.0/24   │  │
+                          │  │ EKS Nodes   │ │ EKS Nodes    │  │
+                          │  └─────────────┘ └───────────────┘  │
+                          └─────────────────────────────────────┘
+
+EKS Node Group:   t3.medium  |  min: 2  desired: 2  max: 3
+EKS Version:      1.30
+EBS CSI Driver:   enabled via cluster addon + IRSA
+```
+
+---
+
+## Prerequisites
+
+- AWS CLI configured with credentials that can create VPCs, EKS, EC2, ECR, IAM roles, and S3 objects
+- Terraform >= 1.5
+- `kubectl` (for interacting with the cluster after creation)
+- Helm 3 (for deploying the monitoring stack)
+- An S3 bucket named `eks-gitops-platform` in `us-east-1` (for remote state)
+- An SSH key pair file named `sonarqube-key-GitOps-platform` in the `sonarqube-EC2/` directory
+
+---
+
+## Deployment Order
+
+> These modules are independent Terraform roots — apply them in this order.
+
+```
+1. EKS/            → VPC + EKS cluster (takes ~15 min)
+2. ECR/            → Container registry
+3. sonarqube-EC2/  → SonarQube server (needed before first CI run)
+4. monitoring/     → Deploy via Helm after cluster is ready
+```
+
+---
+
+## Usage
+
+### 1. EKS — VPC + Cluster
+
+```bash
+cd EKS/
+terraform init
+terraform plan
+terraform apply
+```
+
+After apply, configure kubectl:
+
+```bash
+aws eks update-kubeconfig \
+  --region us-east-1 \
+  --name GitOps-Platform-EKS
+```
+
+**Outputs:**
+
+| Output | Description |
+|--------|-------------|
+| `vpc_id` | VPC ID |
+| `private_subnet_ids` | Subnets where EKS nodes run |
+| `public_subnet_ids` | Subnets where the ALB Ingress lives |
+| `cluster_name` | EKS cluster name |
+| `cluster_endpoint` | Kubernetes API endpoint |
+
+---
+
+### 2. ECR — Container Registry
+
+```bash
+cd ECR/
+terraform init
+terraform apply
+```
+
+**Outputs:**
+
+| Output | Description |
+|--------|-------------|
+| `ecr_app_url` | Full ECR repository URL (used in GitHub Actions) |
+| `ecr_name` | Repository name |
+
+> The ECR repo has `prevent_destroy = true` and `scan_on_push = true`.
+
+---
+
+### 3. SonarQube EC2
+
+```bash
+cd sonarqube-EC2/
+terraform init
+terraform apply
+```
+
+Terraform will SSH into the instance and run `sonar-setup.sh` automatically.
+
+SonarQube will be available at `http://<sonarqubePublicIP>:9000` after a couple of minutes.
+
+**Outputs:**
+
+| Output | Description |
+|--------|-------------|
+| `sonarqubePublicIP` | Public IP for browser access |
+| `sonarqubePrivateIP` | Private IP |
+| `instance_id` | EC2 instance ID |
+
+> **Note:** The instance is created in a `stopped` state after provisioning via `aws_ec2_instance_state`. Start it manually when needed to avoid unnecessary cost.
+
+---
+
+### 4. Monitoring Stack
+
+After the EKS cluster is running and `kubectl` is configured:
+
+**kube-prometheus-stack (Prometheus + Grafana + Alertmanager):**
+
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+
+helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  --namespace monitoring \
+  --create-namespace \
+  -f monitoring/kube-prometheus-stack/values.yaml
+```
+
+**metrics-server:**
+
+```bash
+helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+helm repo update
+
+helm upgrade --install metrics-server metrics-server/metrics-server \
+  --namespace kube-system \
+  -f monitoring/metrics-server/values.yaml
+```
+
+> metrics-server is required for HPA to function. The app repo's Helm chart has HPA enabled by default.
+
+---
+
+## ArgoCD Installation
+
+After EKS is up, install ArgoCD before applying the Helm repo manifests:
+
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+```
+
+Expose the ArgoCD UI (an `argocd-ingress.yaml` is provided in `EKS/` for ALB-based access):
+
+```bash
+kubectl apply -f EKS/argocd-ingress.yaml
+```
+
+Get the initial admin password:
+
+```bash
+kubectl get secret argocd-initial-admin-secret \
+  -n argocd \
+  -o jsonpath="{.data.password}" | base64 -d
+```
+
+---
+
+## State Management
+
+| Module | Backend | Key |
+|--------|---------|-----|
+| `EKS/` | S3 — `eks-gitops-platform` | `dev/terraform.tfstate` |
+| `sonarqube-EC2/` | S3 (separate backend) | see `sonarqube-EC2/backend.tf` |
+
+> **Known limitation:** DynamoDB state locking is currently disabled in `EKS/backend.tf` to avoid extra cost. Do not run `terraform apply` on this module from multiple terminals simultaneously.
+
+---
+
+## Security Notes
+
+- The SonarQube security group currently opens ports 22 and 9000 to `0.0.0.0/0`. Restrict the SSH rule to your own IP in `sonarqube-EC2/sg.tf` before deploying to production.
+- The SSH private key (`sonarqube-key-GitOps-platform`) must never be committed to version control — it is in `.gitignore`.
+- EKS nodes run on private subnets and are not directly accessible from the internet.
+- ECR has `scan_on_push = true`; review findings in the AWS console after each image push.
+
+---
+
+## Teardown
+
+```bash
+# Remove in reverse order
+cd monitoring/      # Helm uninstall first
+helm uninstall kube-prometheus-stack -n monitoring
+helm uninstall metrics-server -n kube-system
+
+cd sonarqube-EC2/
+terraform destroy
+
+cd ECR/
+# ECR has prevent_destroy = true — remove that block first if you intend to destroy
+terraform destroy
+
+cd EKS/
+terraform destroy   # Takes ~10 min
+```
